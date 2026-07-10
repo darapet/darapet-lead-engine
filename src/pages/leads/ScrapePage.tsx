@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useLocation } from 'wouter';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -20,6 +20,107 @@ interface ScrapeResult {
   leads: Array<{ name: string; url: string; email?: string; source: string }>;
 }
 
+// ── Keyless scraper using free CORS proxy + Bing HTML ─────────────────────────
+const EMAIL_REGEX = /[\w.+-]+@[\w-]+\.[\w.]{2,}/g;
+const SKIP_DOMAINS = ['bing.com', 'microsoft.com', 'google.com', 'w3.org', 'schema.org', 'example.com'];
+
+async function scrapeLeadsKeyless(
+  query: string,
+  count: number,
+  type: 'email' | 'social',
+  platformDomain?: string,
+): Promise<Array<{ email?: string; social_name?: string; social_platform?: string; social_url?: string; source_url?: string }>> {
+  const leads: Array<{ email?: string; social_name?: string; social_platform?: string; social_url?: string; source_url?: string }> = [];
+
+  const searchQ = type === 'email'
+    ? `${query} email contact`
+    : platformDomain
+      ? `site:${platformDomain} ${query}`
+      : `${query} social profile`;
+
+  // Try two free CORS proxies in sequence
+  const proxies = [
+    `https://api.allorigins.win/get?url=${encodeURIComponent(`https://www.bing.com/search?q=${encodeURIComponent(searchQ)}&count=50`)}`,
+    `https://corsproxy.io/?${encodeURIComponent(`https://www.bing.com/search?q=${encodeURIComponent(searchQ)}&count=50`)}`,
+  ];
+
+  let html = '';
+  for (const proxy of proxies) {
+    try {
+      const res = await fetch(proxy, { signal: AbortSignal.timeout(12000) });
+      if (!res.ok) continue;
+      // allorigins wraps in JSON; corsproxy returns raw
+      const text = await res.text();
+      try { html = JSON.parse(text).contents || text; } catch { html = text; }
+      if (html.length > 500) break;
+    } catch { /* try next */ }
+  }
+
+  if (!html) return leads;
+
+  const seen = new Set<string>();
+
+  // Split on Bing result blocks
+  const blocks = html.split(/<li[^>]*class="[^"]*b_algo[^"]*"/);
+  for (let i = 1; i < blocks.length && leads.length < count; i++) {
+    const block = blocks[i].split('</li>')[0];
+
+    // Extract the canonical URL from the first <a href=...> that looks like an external link
+    const urlMatch = block.match(/href="(https?:\/\/[^"]+)"/);
+    if (!urlMatch) continue;
+    const url = urlMatch[1];
+    if (SKIP_DOMAINS.some(d => url.includes(d)) || seen.has(url)) continue;
+    seen.add(url);
+
+    // Strip HTML tags to get readable text
+    const text = block.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+
+    // Extract name: text before first dash/pipe or hostname
+    const titleMatch = block.match(/class="[^"]*tilk[^"]*"[^>]*>([^<]+)/);
+    const name = titleMatch
+      ? titleMatch[1].trim()
+      : url.replace(/https?:\/\/(www\.)?/, '').split('/')[0];
+
+    if (type === 'email') {
+      const emails = text.match(EMAIL_REGEX) || [];
+      const email = emails.find(e =>
+        !e.startsWith('sentry') &&
+        !e.includes('example') &&
+        !e.includes('noreply') &&
+        e.split('@')[1]?.includes('.'),
+      );
+      leads.push({ email: email || undefined, source_url: url });
+    } else {
+      leads.push({
+        social_name: name,
+        social_platform: platformDomain?.split('.')[0] || 'social',
+        social_url: url,
+        source_url: url,
+      });
+    }
+  }
+
+  // Fallback: simple href scan if block splitting found nothing
+  if (leads.length === 0) {
+    const hrefRe = /href="(https?:\/\/[^"]+)"/g;
+    let m: RegExpExecArray | null;
+    while ((m = hrefRe.exec(html)) !== null && leads.length < count) {
+      const url = m[1];
+      if (SKIP_DOMAINS.some(d => url.includes(d)) || seen.has(url)) continue;
+      seen.add(url);
+      const name = url.replace(/https?:\/\/(www\.)?/, '').split('/')[0];
+      if (type === 'email') {
+        leads.push({ source_url: url });
+      } else {
+        leads.push({ social_name: name, social_platform: platformDomain?.split('.')[0], social_url: url, source_url: url });
+      }
+    }
+  }
+
+  return leads.slice(0, count);
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
 export function ScrapePage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -28,7 +129,6 @@ export function ScrapePage() {
   const [scraping, setScraping] = useState(false);
   const [results, setResults] = useState<ScrapeResult[]>([]);
   const [batchId, setBatchId] = useState<number | null>(null);
-  const [adminSettings, setAdminSettings] = useState<{ google_search_api_key?: string; google_search_engine_id?: string } | null>(null);
 
   // Step 1: Countries & States
   const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
@@ -43,11 +143,6 @@ export function ScrapePage() {
   const [scrapeType, setScrapeType] = useState<'email' | 'social'>('email');
   const [selectedSocial, setSelectedSocial] = useState('');
   const [socialCategoryFilter, setSocialCategoryFilter] = useState('all');
-
-  useEffect(() => {
-    supabase.from('settings').select('google_search_api_key, google_search_engine_id').eq('id', 1).single()
-      .then(({ data }) => setAdminSettings(data));
-  }, []);
 
   const steps = [
     { title: 'Location', description: 'Pick countries & states', icon: Globe2 },
@@ -79,23 +174,13 @@ export function ScrapePage() {
 
   const filteredCountries = COUNTRIES.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase()));
 
-  // Google CSE scrape
+  // Keyless scrape — no API key required
   const doScrape = async () => {
     if (!user) return;
     setScraping(true);
     setStep(3);
 
     const allResults: ScrapeResult[] = [];
-    const apiKey = adminSettings?.google_search_api_key;
-    const cx = adminSettings?.google_search_engine_id;
-
-    if (!apiKey || !cx) {
-      toast({ variant: 'destructive', title: 'Scraping not configured', description: 'Admin has not set up the Google Search API key yet.' });
-      setScraping(false);
-      setStep(2);
-      return;
-    }
-
     const platform = SOCIAL_PLATFORMS.find(p => p.id === selectedSocial);
 
     for (const countryCode of selectedCountries) {
@@ -106,35 +191,62 @@ export function ScrapePage() {
       const countryLeads: ScrapeResult['leads'] = [];
 
       for (const location of locations.slice(0, 3)) {
-        const query = scrapeType === 'email'
-          ? `${niche} ${location} email contact`
-          : `${platform?.searchPrefix || ''} ${niche} ${location}`;
+        const query = `${niche} ${location}`;
 
         try {
-          const res = await fetch(
-            `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(query)}&num=10`
+          const raw = await scrapeLeadsKeyless(
+            query,
+            Math.ceil(amount / Math.max(locations.slice(0, 3).length, 1)),
+            scrapeType,
+            platform?.domain,
           );
-          const data = await res.json();
-          const items = data.items || [];
 
-          for (const item of items) {
+          for (const lead of raw) {
             if (scrapeType === 'social') {
-              const urlMatch = (item.link || '').match(new RegExp(`https?://(www\\.)?${platform?.domain?.replace('.', '\\.')}/[\\w.-]+`));
-              if (urlMatch) {
-                countryLeads.push({ name: item.title?.split(' - ')[0] || 'Unknown', url: urlMatch[0], source: item.link });
-              }
+              countryLeads.push({
+                name: lead.social_name || lead.social_url || '',
+                url: lead.social_url || lead.source_url || '',
+                source: lead.source_url || '',
+              });
             } else {
-              const emailMatch = (item.snippet || '').match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-              if (emailMatch) {
-                countryLeads.push({ name: item.title?.split(' - ')[0] || 'Unknown', url: item.link, email: emailMatch[0], source: item.link });
-              }
+              countryLeads.push({
+                name: lead.source_url?.replace(/https?:\/\/(www\.)?/, '').split('/')[0] || '',
+                url: lead.source_url || '',
+                email: lead.email,
+                source: lead.source_url || '',
+              });
             }
           }
         } catch (err) {
-          console.error('Scrape error:', err);
+          console.error('Scrape error for', location, err);
         }
 
         if (countryLeads.length >= amount) break;
+      }
+
+      // Save batch to Supabase
+      const { data: batch } = await supabase.from('lead_batches').insert({
+        user_id: user.id,
+        niche,
+        country: country.name,
+        target_type: scrapeType === 'social' ? (platform?.id || selectedSocial) : 'email',
+        requested_count: amount,
+        found_count: countryLeads.length,
+        source: 'bing',
+        status: 'complete',
+      }).select().single();
+
+      if (batch) {
+        setBatchId(batch.id);
+        const leadsToInsert = countryLeads.map(lead => ({
+          batch_id: batch.id,
+          email: lead.email || null,
+          social_name: scrapeType === 'social' ? lead.name : null,
+          social_platform: scrapeType === 'social' ? (platform?.id || selectedSocial) : null,
+          social_url: scrapeType === 'social' ? lead.url : null,
+          source_url: lead.source || lead.url,
+        }));
+        if (leadsToInsert.length > 0) await supabase.from('darapet_leads').insert(leadsToInsert);
       }
 
       if (countryLeads.length > 0) {
@@ -142,36 +254,21 @@ export function ScrapePage() {
       }
     }
 
-    // Save batch to DB
-    const { data: batch } = await supabase.from('lead_batches').insert({
+    // Log activity
+    const total = allResults.reduce((s, r) => s + r.leads.length, 0);
+    supabase.from('activity_logs').insert({
       user_id: user.id,
-      niche,
-      country: selectedCountries.join(', '),
-      target_type: scrapeType,
-      requested_count: amount,
-      found_count: allResults.reduce((sum, r) => sum + r.leads.length, 0),
-      source: scrapeType === 'social' ? selectedSocial : 'email',
-      status: 'complete',
-    }).select().single();
-
-    if (batch) {
-      setBatchId(batch.id);
-      // Save individual leads
-      const leadsToInsert = allResults.flatMap(r =>
-        r.leads.map(lead => ({
-          batch_id: batch.id,
-          email: lead.email || null,
-          social_name: scrapeType === 'social' ? lead.name : null,
-          social_platform: scrapeType === 'social' ? selectedSocial : null,
-          social_url: scrapeType === 'social' ? lead.url : null,
-          source_url: lead.source,
-        }))
-      );
-      if (leadsToInsert.length > 0) await supabase.from('darapet_leads').insert(leadsToInsert);
-    }
+      action: `Scraped ${total} ${scrapeType} leads for "${niche}"`,
+    }).then(() => {});
 
     setResults(allResults);
     setScraping(false);
+
+    if (total > 0) {
+      toast({ title: `Found ${total} leads!`, description: 'Saved to your lead history.' });
+    } else {
+      toast({ variant: 'destructive', title: 'No leads found', description: 'Try a broader niche or a different location.' });
+    }
   };
 
   const totalFound = results.reduce((s, r) => s + r.leads.length, 0);
@@ -213,7 +310,7 @@ export function ScrapePage() {
           <motion.div key="step0" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
             <Card>
               <CardHeader>
-                <CardTitle>Select Countries & States</CardTitle>
+                <CardTitle>Select Countries &amp; States</CardTitle>
                 <CardDescription>Choose where to look for leads. Check states for more specific targeting.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -279,7 +376,7 @@ export function ScrapePage() {
                 <div className="space-y-2">
                   <Label>Number of leads (per country)</Label>
                   <Input type="number" min={1} max={100} value={amount} onChange={e => setAmount(Number(e.target.value))} className="bg-muted/50 w-40" />
-                  <p className="text-xs text-muted-foreground">Max 100 per country per scrape. Google CSE has daily limits.</p>
+                  <p className="text-xs text-muted-foreground">Up to 100 leads per country per scrape.</p>
                 </div>
                 <div className="flex gap-3 pt-2">
                   <Button variant="outline" onClick={() => setStep(0)} className="gap-2"><ChevronLeft className="w-4 h-4" /> Back</Button>
@@ -355,7 +452,7 @@ export function ScrapePage() {
           </motion.div>
         )}
 
-        {/* Step 3 — Results */}
+        {/* Step 3 — Loading / Results */}
         {step === 3 && (
           <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
             {scraping ? (
@@ -378,19 +475,13 @@ export function ScrapePage() {
                     </div>
                     <div className="ml-auto flex gap-2">
                       {scrapeType === 'email' ? (
-                        <>
-                          <Button onClick={() => batchId && setLocation(`/email?batch=${batchId}`)} className="bg-primary">
-                            <Mail className="w-4 h-4 mr-2" /> Send Now
-                          </Button>
-                          <Button variant="outline" onClick={() => batchId && setLocation(`/leads/${batchId}`)}>
-                            View Later
-                          </Button>
-                        </>
-                      ) : (
-                        <Button onClick={() => batchId && setLocation(`/leads/${batchId}`)}>
-                          View All Leads →
+                        <Button size="sm" onClick={() => batchId && setLocation(`/email?batch=${batchId}`)} disabled={!batchId || totalFound === 0} className="gap-1">
+                          <Mail className="w-3.5 h-3.5" /> Send Emails
                         </Button>
-                      )}
+                      ) : null}
+                      <Button size="sm" variant="outline" onClick={() => batchId && setLocation(`/leads/${batchId}`)} disabled={!batchId}>
+                        View All Leads
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
