@@ -8,6 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2, Mail, Lock, CheckCircle2, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// The live URL of this app — Supabase uses this for email redirect links
+const APP_URL = 'https://darapet.github.io/Darapet-Technology/';
+
 type Step = 'email' | 'otp' | 'password';
 
 export function RegisterPage() {
@@ -25,7 +28,14 @@ export function RegisterPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+        // Ensures any "click here" link in the email lands on the correct URL
+        emailRedirectTo: APP_URL,
+      },
+    });
     setLoading(false);
     if (error) { setError(error.message); return; }
     setStep('otp');
@@ -84,105 +94,126 @@ export function RegisterPage() {
           ))}
         </div>
 
-        <Card className="border-0 shadow-2xl bg-white/10 backdrop-blur-md text-white">
-          <CardContent className="pt-6">
-            {error && (
-              <div className="bg-red-500/20 border border-red-500/40 text-red-200 text-sm px-4 py-3 rounded-lg mb-4">
-                {error}
-              </div>
-            )}
-
-            <AnimatePresence mode="wait">
-              {step === 'email' && (
-                <motion.form key="email" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} onSubmit={sendOtp} className="space-y-4">
-                  <CardHeader className="px-0 pt-0">
-                    <CardTitle className="text-lg text-white">Enter your email</CardTitle>
-                    <CardDescription className="text-blue-200">We'll send a 6-digit code to verify</CardDescription>
-                  </CardHeader>
-                  <div className="space-y-2">
-                    <Label className="text-blue-100">Email address</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300" />
-                      <Input type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)}
-                        className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:border-blue-400" required />
+        <AnimatePresence mode="wait">
+          {/* Step 1: Email */}
+          {step === 'email' && (
+            <motion.div key="email" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <Card className="bg-white/5 border-white/10 text-white">
+                <CardHeader>
+                  <CardTitle className="text-white">Enter your email</CardTitle>
+                  <CardDescription className="text-blue-200">
+                    We'll send a 6-digit verification code to your inbox.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={sendOtp} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-blue-100">Email address</Label>
+                      <Input
+                        type="email" value={email} onChange={e => setEmail(e.target.value)}
+                        placeholder="you@example.com" required autoFocus
+                        className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:border-blue-400"
+                      />
                     </div>
-                  </div>
-                  <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 h-11 font-semibold" disabled={loading}>
-                    {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowRight className="w-4 h-4 mr-2" />}
-                    Send Verification Code
-                  </Button>
-                </motion.form>
-              )}
+                    {error && <p className="text-red-400 text-sm">{error}</p>}
+                    <Button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 gap-2">
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                      {loading ? 'Sending code...' : 'Send Verification Code'}
+                    </Button>
+                    <p className="text-center text-sm text-blue-200">
+                      Already have an account?{' '}
+                      <a href="/login" className="text-blue-400 hover:underline" onClick={e => { e.preventDefault(); setLocation('/login'); }}>Sign in</a>
+                    </p>
+                  </form>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
 
-              {step === 'otp' && (
-                <motion.form key="otp" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} onSubmit={verifyOtp} className="space-y-4">
-                  <CardHeader className="px-0 pt-0">
-                    <CardTitle className="text-lg text-white">Check your email</CardTitle>
-                    <CardDescription className="text-blue-200">Enter the 6-digit code sent to <span className="text-blue-300 font-medium">{email}</span></CardDescription>
-                  </CardHeader>
-                  <div className="space-y-2">
-                    <Label className="text-blue-100">Verification code</Label>
-                    <Input
-                      type="text"
-                      placeholder="000000"
-                      value={otp}
-                      onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      className="text-center text-2xl tracking-widest font-mono bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:border-blue-400 h-14"
-                      maxLength={6}
-                      required
-                    />
-                  </div>
-                  <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 h-11 font-semibold" disabled={loading || otp.length < 6}>
-                    {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    Verify Code
-                  </Button>
-                  <button type="button" onClick={() => { setStep('email'); setOtp(''); }} className="w-full text-sm text-blue-300 hover:text-white text-center">
-                    ← Change email
-                  </button>
-                </motion.form>
-              )}
-
-              {step === 'password' && (
-                <motion.form key="password" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} onSubmit={setAccountPassword} className="space-y-4">
-                  <CardHeader className="px-0 pt-0">
-                    <CardTitle className="text-lg text-white">Set your password</CardTitle>
-                    <CardDescription className="text-blue-200">Create a strong password for your account</CardDescription>
-                  </CardHeader>
-                  <div className="space-y-2">
-                    <Label className="text-blue-100">Password</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300" />
-                      <Input type={showPassword ? 'text' : 'password'} placeholder="Min. 8 characters" value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        className="pl-10 pr-10 bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:border-blue-400" required />
-                      <button type="button" onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-300">
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+          {/* Step 2: OTP */}
+          {step === 'otp' && (
+            <motion.div key="otp" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <Card className="bg-white/5 border-white/10 text-white">
+                <CardHeader>
+                  <CardTitle className="text-white">Check your email</CardTitle>
+                  <CardDescription className="text-blue-200">
+                    Enter the 6-digit code we sent to <strong className="text-white">{email}</strong>.
+                    <br />
+                    <span className="text-xs opacity-75 mt-1 block">Can't find it? Check your spam folder. The email also contains a sign-in link — do not click that link, use the code below.</span>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={verifyOtp} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-blue-100">Verification code</Label>
+                      <Input
+                        type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6}
+                        value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
+                        placeholder="123456" required autoFocus
+                        className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:border-blue-400 text-center text-2xl tracking-widest font-mono"
+                      />
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-blue-100">Confirm password</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300" />
-                      <Input type={showPassword ? 'text' : 'password'} placeholder="Repeat password" value={confirmPassword}
-                        onChange={e => setConfirmPassword(e.target.value)}
-                        className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:border-blue-400" required />
-                    </div>
-                  </div>
-                  <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 h-11 font-semibold" disabled={loading}>
-                    {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-                    Create Account
-                  </Button>
-                </motion.form>
-              )}
-            </AnimatePresence>
+                    {error && <p className="text-red-400 text-sm">{error}</p>}
+                    <Button type="submit" disabled={loading || otp.length < 6} className="w-full bg-blue-600 hover:bg-blue-700 gap-2">
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                      {loading ? 'Verifying...' : 'Verify Code'}
+                    </Button>
+                    <button type="button" onClick={() => setStep('email')} className="w-full text-sm text-blue-300 hover:text-white transition-colors">
+                      ← Use a different email
+                    </button>
+                  </form>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
 
-            <p className="text-center text-sm text-blue-200 mt-6">
-              Already have an account?{' '}
-              <button onClick={() => setLocation('/login')} className="text-blue-300 hover:text-white font-semibold hover:underline">Sign in</button>
-            </p>
-          </CardContent>
-        </Card>
+          {/* Step 3: Password */}
+          {step === 'password' && (
+            <motion.div key="password" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <Card className="bg-white/5 border-white/10 text-white">
+                <CardHeader>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-green-400" /> Email verified!
+                  </CardTitle>
+                  <CardDescription className="text-blue-200">Set a password for your account.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={setAccountPassword} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-blue-100">Password</Label>
+                      <div className="relative">
+                        <Input
+                          type={showPassword ? 'text' : 'password'}
+                          value={password} onChange={e => setPassword(e.target.value)}
+                          placeholder="Minimum 8 characters" required
+                          className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:border-blue-400 pr-10"
+                        />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white">
+                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-blue-100">Confirm password</Label>
+                      <Input
+                        type={showPassword ? 'text' : 'password'}
+                        value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                        placeholder="Repeat your password" required
+                        className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:border-blue-400"
+                      />
+                    </div>
+                    {error && <p className="text-red-400 text-sm">{error}</p>}
+                    <Button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 gap-2">
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                      {loading ? 'Creating account...' : 'Create Account'}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );

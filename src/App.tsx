@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Route, Switch, Router as WouterRouter, Redirect } from 'wouter';
+import { Route, Switch, Router as WouterRouter, Redirect, useLocation } from 'wouter';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
@@ -35,25 +35,34 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
 });
 
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <Spinner className="w-8 h-8" />
+    </div>
+  );
+}
+
 function AppRoutes() {
   const { user, isLoading, isOnboarded } = useAuth();
+  const [location] = useLocation();
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Spinner className="w-8 h-8" />
-      </div>
-    );
+  // Auth pages (login / register) render immediately — don't block on loading.
+  // This prevents the "spinner → silent redirect to dashboard" confusion.
+  const isPublicAuthPage = location === '/login' || location === '/register';
+
+  if (isLoading && !isPublicAuthPage) {
+    return <LoadingScreen />;
   }
 
   return (
     <Switch>
-      {/* Public auth routes — redirect away if already signed in */}
+      {/* Public auth routes — only redirect once auth state is confirmed */}
       <Route path="/login">
-        {user && isOnboarded ? <Redirect to="/" /> : <LoginPage />}
+        {!isLoading && user && isOnboarded ? <Redirect to="/" /> : <LoginPage />}
       </Route>
       <Route path="/register">
-        {user && isOnboarded ? <Redirect to="/" /> : <RegisterPage />}
+        {!isLoading && user && isOnboarded ? <Redirect to="/" /> : <RegisterPage />}
       </Route>
 
       {/* Account status pages */}
@@ -139,7 +148,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
             <AppRoutes />
           </WouterRouter>
           <Toaster />

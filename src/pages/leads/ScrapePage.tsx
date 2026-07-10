@@ -425,7 +425,13 @@ export function ScrapePage() {
                         <button key={platform.id} onClick={() => setSelectedSocial(platform.id)}
                           className={cn('flex items-center gap-2 p-3 rounded-xl border text-sm font-medium transition-all text-left',
                             selectedSocial === platform.id ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/30')}>
-                          <span className="text-lg shrink-0">{platform.icon}</span>
+                          <img
+                            src={platform.icon}
+                            alt={platform.name}
+                            className="w-4 h-4 shrink-0 object-contain"
+                            style={{ filter: selectedSocial === platform.id ? 'none' : 'brightness(0) invert(0.6)' }}
+                            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
                           <span className="truncate">{platform.name}</span>
                         </button>
                       ))}
