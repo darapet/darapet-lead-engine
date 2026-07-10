@@ -46,25 +46,24 @@ function AppRoutes() {
     );
   }
 
-  // Redirect authenticated users away from auth pages
-  if (user && isOnboarded) {
-    return null; // Fall through to Switch
-  }
-
   return (
     <Switch>
-      {/* Public auth routes */}
-      <Route path="/login" component={LoginPage} />
-      <Route path="/register" component={RegisterPage} />
+      {/* Public auth routes — redirect away if already signed in */}
+      <Route path="/login">
+        {user && isOnboarded ? <Redirect to="/" /> : <LoginPage />}
+      </Route>
+      <Route path="/register">
+        {user && isOnboarded ? <Redirect to="/" /> : <RegisterPage />}
+      </Route>
 
-      {/* Status pages */}
+      {/* Account status pages */}
       <Route path="/suspended" component={SuspendedPage} />
       <Route path="/banned" component={BannedPage} />
       <Route path="/restricted" component={RestrictedPage} />
 
       {/* Onboarding — requires auth but not full profile */}
       <Route path="/onboarding">
-        {user ? <OnboardingPage /> : <Redirect to="/login" />}
+        {!user ? <Redirect to="/login" /> : isOnboarded ? <Redirect to="/" /> : <OnboardingPage />}
       </Route>
 
       {/* Admin routes */}
@@ -79,11 +78,9 @@ function AppRoutes() {
         </ProtectedRoute>
       </Route>
       <Route path="/admin/users/:id">
-        {(params) => (
-          <ProtectedRoute adminOnly>
-            <AdminLayout><UserDetail /></AdminLayout>
-          </ProtectedRoute>
-        )}
+        <ProtectedRoute adminOnly>
+          <AdminLayout><UserDetail /></AdminLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/admin/activity">
         <ProtectedRoute adminOnly>
@@ -142,7 +139,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
+          <WouterRouter base="">
             <AppRoutes />
           </WouterRouter>
           <Toaster />

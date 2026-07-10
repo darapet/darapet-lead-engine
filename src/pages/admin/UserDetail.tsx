@@ -25,20 +25,16 @@ export function UserDetail() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Dialogs
   const [suspendDialog, setSuspendDialog] = useState(false);
   const [banDialog, setBanDialog] = useState(false);
   const [restrictDialog, setRestrictDialog] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [upgradeDialog, setUpgradeDialog] = useState(false);
 
-  // Form state
   const [suspendReason, setSuspendReason] = useState('');
   const [banReason, setBanReason] = useState('');
   const [emailLimit, setEmailLimit] = useState('');
   const [planName, setPlanName] = useState('');
-
-  // Restriction builder
   const [restrictionTitle, setRestrictionTitle] = useState('');
   const [restrictionDesc, setRestrictionDesc] = useState('');
   const [restrictionFields, setRestrictionFields] = useState<RestrictionField[]>([]);
@@ -46,8 +42,8 @@ export function UserDetail() {
   useEffect(() => {
     const load = async () => {
       const [userRes, actRes] = await Promise.all([
-        supabase.from('app_users').select('*').eq('id', id).single(),
-        supabase.from('activity_logs').select('*').eq('user_id', id).order('created_at', { ascending: false }).limit(20),
+        supabase.from('app_users').select('*').eq('id', id!).single(),
+        supabase.from('activity_logs').select('*').eq('user_id', id!).order('created_at', { ascending: false }).limit(20),
       ]);
       setUser(userRes.data);
       setActivity(actRes.data || []);
@@ -60,10 +56,13 @@ export function UserDetail() {
 
   const updateStatus = async (status: string, extra: Record<string, unknown> = {}) => {
     setSaving(true);
-    const { error } = await supabase.from('app_users').update({ status, ...extra }).eq('id', id!);
+    const updates: Record<string, unknown> = { status, ...extra };
+    const { error } = await supabase.from('app_users').update(updates as Parameters<typeof supabase.from<'app_users'>>[0] extends never ? never : never).eq('id', id!);
+    // Use any to bypass strict typing on update payload
+    const { error: e2 } = await (supabase.from('app_users') as ReturnType<typeof supabase.from>).update(updates).eq('id', id!);
     setSaving(false);
-    if (error) { toast({ variant: 'destructive', title: 'Error', description: error.message }); return; }
-    setUser(prev => prev ? { ...prev, status, ...extra } as AppUser : prev);
+    if (e2) { toast({ variant: 'destructive', title: 'Error', description: e2.message }); return; }
+    setUser(prev => prev ? { ...prev, ...updates } as AppUser : prev);
     toast({ title: 'Updated', description: `User status changed to ${status}` });
   };
 
@@ -97,9 +96,9 @@ export function UserDetail() {
 
   const handleUpgrade = async () => {
     setSaving(true);
-    await supabase.from('app_users').update({ daily_email_limit: Number(emailLimit), role: planName }).eq('id', id!);
+    await (supabase.from('app_users') as ReturnType<typeof supabase.from>).update({ daily_email_limit: Number(emailLimit), role: planName }).eq('id', id!);
     setSaving(false);
-    setUser(prev => prev ? { ...prev, daily_email_limit: Number(emailLimit), role: planName } : prev);
+    setUser(prev => prev ? { ...prev, daily_email_limit: Number(emailLimit), role: planName } as AppUser : prev);
     setUpgradeDialog(false);
     toast({ title: 'Plan Updated', description: 'Email limit and plan name updated.' });
   };
@@ -112,7 +111,7 @@ export function UserDetail() {
   };
   const removeField = (i: number) => setRestrictionFields(prev => prev.filter((_, idx) => idx !== i));
 
-  if (loading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-24 bg-white/5 rounded-xl" />)}</div>;
+  if (loading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-24 bg-white/5 rounded-xl" />)}</div>;
   if (!user) return <div className="text-white/50 text-center py-20">User not found</div>;
 
   const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Unknown User';
@@ -131,7 +130,6 @@ export function UserDetail() {
         <ArrowLeft className="w-4 h-4" /> Back to Users
       </Button>
 
-      {/* User header */}
       <div className="flex items-start gap-4 p-6 bg-white/5 rounded-2xl border border-white/5">
         <div className="w-16 h-16 rounded-2xl bg-blue-600/20 flex items-center justify-center text-2xl font-bold text-blue-300 shrink-0">
           {fullName[0]?.toUpperCase()}
@@ -139,7 +137,7 @@ export function UserDetail() {
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
             <h2 className="text-2xl font-bold text-white">{fullName}</h2>
-            <Badge className={STATUS_COLOR[status]}>{status.charAt(0).toUpperCase() + status.slice(1)}</Badge>
+            <Badge className={STATUS_COLOR[status] || STATUS_COLOR.active}>{status.charAt(0).toUpperCase() + status.slice(1)}</Badge>
           </div>
           <p className="text-white/50 text-sm mt-1">{user.email}</p>
           {user.brand_name && <p className="text-white/40 text-xs mt-1">Brand: {user.brand_name}</p>}
@@ -151,7 +149,6 @@ export function UserDetail() {
         </div>
       </div>
 
-      {/* Actions */}
       <Card className="bg-white/5 border-white/5">
         <CardHeader><CardTitle className="text-white text-base">Account Actions</CardTitle></CardHeader>
         <CardContent>
@@ -186,7 +183,6 @@ export function UserDetail() {
         </CardContent>
       </Card>
 
-      {/* Activity */}
       <Card className="bg-white/5 border-white/5">
         <CardHeader><CardTitle className="text-white text-base">Recent Activity</CardTitle></CardHeader>
         <CardContent>
@@ -212,9 +208,7 @@ export function UserDetail() {
           <DialogHeader><DialogTitle>Suspend User</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <Label>Reason for suspension</Label>
-            <Textarea value={suspendReason} onChange={e => setSuspendReason(e.target.value)}
-              placeholder="Explain why this account is being suspended..."
-              className="bg-white/5 border-white/10 text-white" />
+            <Textarea value={suspendReason} onChange={e => setSuspendReason(e.target.value)} className="bg-white/5 border-white/10 text-white" />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setSuspendDialog(false)} className="text-white/60">Cancel</Button>
@@ -229,12 +223,9 @@ export function UserDetail() {
       <Dialog open={banDialog} onOpenChange={setBanDialog}>
         <DialogContent className="bg-slate-900 border-white/10 text-white">
           <DialogHeader><DialogTitle className="text-red-400">Ban User</DialogTitle></DialogHeader>
-          <p className="text-white/50 text-sm">This is permanent. The user will not be able to access the platform.</p>
           <div className="space-y-3">
             <Label>Reason for ban</Label>
-            <Textarea value={banReason} onChange={e => setBanReason(e.target.value)}
-              placeholder="Explain why this account is being banned..."
-              className="bg-white/5 border-white/10 text-white" />
+            <Textarea value={banReason} onChange={e => setBanReason(e.target.value)} className="bg-white/5 border-white/10 text-white" />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setBanDialog(false)} className="text-white/60">Cancel</Button>
@@ -245,23 +236,18 @@ export function UserDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Restrict dialog — custom form builder */}
+      {/* Restrict dialog */}
       <Dialog open={restrictDialog} onOpenChange={setRestrictDialog}>
         <DialogContent className="bg-slate-900 border-white/10 text-white max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="text-yellow-400">Restrict Account</DialogTitle></DialogHeader>
-          <p className="text-white/50 text-sm">Build the form the user must complete to resolve this restriction.</p>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Restriction Title</Label>
-              <Input value={restrictionTitle} onChange={e => setRestrictionTitle(e.target.value)}
-                placeholder="e.g. Identity Verification Required"
-                className="bg-white/5 border-white/10 text-white" />
+              <Input value={restrictionTitle} onChange={e => setRestrictionTitle(e.target.value)} className="bg-white/5 border-white/10 text-white" />
             </div>
             <div className="space-y-2">
               <Label>Description</Label>
-              <Textarea value={restrictionDesc} onChange={e => setRestrictionDesc(e.target.value)}
-                placeholder="Explain what the user needs to do..."
-                className="bg-white/5 border-white/10 text-white resize-none" rows={2} />
+              <Textarea value={restrictionDesc} onChange={e => setRestrictionDesc(e.target.value)} className="bg-white/5 border-white/10 text-white resize-none" rows={2} />
             </div>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -293,7 +279,7 @@ export function UserDetail() {
                 </div>
               ))}
               {restrictionFields.length === 0 && (
-                <p className="text-white/30 text-sm text-center py-3">No fields yet. Click "Add Field" to build the form.</p>
+                <p className="text-white/30 text-sm text-center py-3">No fields yet.</p>
               )}
             </div>
           </div>
@@ -306,23 +292,18 @@ export function UserDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Upgrade/Downgrade dialog */}
+      {/* Upgrade dialog */}
       <Dialog open={upgradeDialog} onOpenChange={setUpgradeDialog}>
         <DialogContent className="bg-slate-900 border-white/10 text-white">
           <DialogHeader><DialogTitle>Set Plan & Limits</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Plan Name</Label>
-              <Input value={planName} onChange={e => setPlanName(e.target.value)}
-                placeholder="e.g. Free, Pro, Business, Enterprise"
-                className="bg-white/5 border-white/10 text-white" />
+              <Input value={planName} onChange={e => setPlanName(e.target.value)} className="bg-white/5 border-white/10 text-white" />
             </div>
             <div className="space-y-2">
               <Label>Daily Email Limit</Label>
-              <Input type="number" value={emailLimit} onChange={e => setEmailLimit(e.target.value)}
-                placeholder="e.g. 100"
-                className="bg-white/5 border-white/10 text-white" />
-              <p className="text-white/40 text-xs">Set to 0 for unlimited</p>
+              <Input type="number" value={emailLimit} onChange={e => setEmailLimit(e.target.value)} className="bg-white/5 border-white/10 text-white" />
             </div>
           </div>
           <DialogFooter>
@@ -338,11 +319,11 @@ export function UserDetail() {
       <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
         <DialogContent className="bg-slate-900 border-white/10 text-white">
           <DialogHeader><DialogTitle className="text-red-400">Delete Account</DialogTitle></DialogHeader>
-          <p className="text-white/70">This will permanently delete <strong>{fullName}</strong>'s account and all associated data. This cannot be undone.</p>
+          <p className="text-white/70">This permanently deletes <strong>{fullName}</strong>'s account. This cannot be undone.</p>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDeleteDialog(false)} className="text-white/60">Cancel</Button>
             <Button onClick={handleDelete} disabled={saving} className="bg-red-600 hover:bg-red-700">
-              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Yes, Delete Account
+              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Yes, Delete
             </Button>
           </DialogFooter>
         </DialogContent>

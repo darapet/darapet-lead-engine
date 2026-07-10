@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Users, ShieldOff, AlertTriangle, Mail, Activity, TrendingUp } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Link } from 'wouter';
+import { Users, ShieldOff, AlertTriangle, Mail, Activity, TrendingUp } from 'lucide-react';
+import type { AppUser } from '@/types/database';
 
 interface Stats {
   totalUsers: number;
@@ -14,7 +14,7 @@ interface Stats {
   restrictedUsers: number;
   totalLeadBatches: number;
   totalEmailSends: number;
-  recentActivity: Array<{ id: string; action: string; created_at: string; user_id: string }>;
+  recentActivity: Array<{ id: string; action: string | null; created_at: string | null; user_id: string | null }>;
 }
 
 export function AdminDashboard() {
@@ -30,7 +30,7 @@ export function AdminDashboard() {
         supabase.from('activity_logs').select('id, action, created_at, user_id').order('created_at', { ascending: false }).limit(10),
       ]);
 
-      const userList = users.data || [];
+      const userList: Array<{ id: string; status: string | null }> = (users.data as Array<{ id: string; status: string | null }>) || [];
       setStats({
         totalUsers: userList.length,
         activeUsers: userList.filter(u => !u.status || u.status === 'active').length,
@@ -49,7 +49,7 @@ export function AdminDashboard() {
   if (loading) return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[1,2,3,4].map(i => <Skeleton key={i} className="h-28 bg-white/5 rounded-xl" />)}
+        {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-28 bg-white/5 rounded-xl" />)}
       </div>
     </div>
   );
@@ -99,7 +99,7 @@ export function AdminDashboard() {
               <div key={log.id} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
                 <div className="w-2 h-2 rounded-full bg-purple-400 shrink-0" />
                 <span className="text-sm text-white/70 flex-1">{log.action}</span>
-                <span className="text-xs text-white/30">{new Date(log.created_at).toLocaleDateString()}</span>
+                <span className="text-xs text-white/30">{log.created_at ? new Date(log.created_at).toLocaleDateString() : ''}</span>
               </div>
             ))}
           </CardContent>
@@ -128,15 +128,17 @@ export function AdminDashboard() {
                 </div>
               </a>
             </Link>
-            {stats?.restrictedUsers ? (
+            {(stats?.restrictedUsers ?? 0) > 0 && (
               <div className="flex items-center gap-3 p-3 rounded-lg bg-yellow-500/10">
                 <AlertTriangle className="w-5 h-5 text-yellow-400" />
                 <div>
-                  <p className="text-white font-medium text-sm">{stats.restrictedUsers} user(s) with pending reviews</p>
-                  <Link href="/admin/users?filter=restricted"><a className="text-yellow-400 text-xs hover:underline">Review now →</a></Link>
+                  <p className="text-white font-medium text-sm">{stats?.restrictedUsers} user(s) with pending reviews</p>
+                  <Link href="/admin/users?filter=restricted">
+                    <a className="text-yellow-400 text-xs hover:underline">Review now →</a>
+                  </Link>
                 </div>
               </div>
-            ) : null}
+            )}
           </CardContent>
         </Card>
       </div>
