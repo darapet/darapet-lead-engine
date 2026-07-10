@@ -436,14 +436,21 @@ export function ScrapePage() {
                         </button>
                       ))}
                     </div>
-                    {selectedSocial && (
-                      <div className="p-3 bg-primary/5 rounded-lg border border-primary/20 text-sm">
-                        <span className="text-primary font-medium">
-                          {SOCIAL_PLATFORMS.find(p => p.id === selectedSocial)?.icon} {SOCIAL_PLATFORMS.find(p => p.id === selectedSocial)?.name}
-                        </span>
-                        <span className="text-muted-foreground"> selected. Only one platform per scrape.</span>
-                      </div>
-                    )}
+                    {selectedSocial && (() => {
+                      const pl = SOCIAL_PLATFORMS.find(p => p.id === selectedSocial);
+                      return pl ? (
+                        <div className="p-3 bg-primary/5 rounded-lg border border-primary/20 text-sm flex items-center gap-2">
+                          <img
+                            src={pl.icon}
+                            alt={pl.name}
+                            className="w-4 h-4 shrink-0 object-contain"
+                            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                          />
+                          <span className="text-primary font-medium">{pl.name}</span>
+                          <span className="text-muted-foreground">selected. Only one platform per scrape.</span>
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 )}
 
