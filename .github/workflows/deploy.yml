@@ -1,0 +1,43 @@
+name: Deploy to GitHub Pages
+
+    on:
+    push:
+      branches: [main]
+    workflow_dispatch:
+
+    permissions:
+    contents: write
+
+    jobs:
+    deploy:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout source
+          uses: actions/checkout@v4
+
+        - name: Setup Node.js
+          uses: actions/setup-node@v4
+          with:
+            node-version: '20'
+            cache: 'npm'
+
+        - name: Install dependencies
+          run: npm install
+
+        - name: Build
+          env:
+            BASE_PATH: /Darapet-Technology/
+            VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+            VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          run: npm run build
+
+        - name: Deploy to Darapet-Technology repo
+          uses: peaceiris/actions-gh-pages@v4
+          with:
+            personal_token: ${{ secrets.DEPLOY_TOKEN }}
+            external_repository: darapet/Darapet-Technology
+            publish_branch: main
+            publish_dir: ./dist
+            force_orphan: false
+            keep_files: false
+    
