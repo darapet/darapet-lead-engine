@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Mail, Search, Key, Info } from 'lucide-react';
+import { Loader2, Mail, Cpu, Globe, Users, CheckCircle2, Info } from 'lucide-react';
 
 export function AdminSettings() {
   const { toast } = useToast();
@@ -30,123 +30,154 @@ export function AdminSettings() {
 
   const saveSettings = async () => {
     setSaving(true);
-    const { error } = await supabase.from('settings').upsert({ id: 1, ...settings, updated_at: new Date().toISOString() });
-    const { error: err2 } = await supabase.from('app_settings').upsert({ id: 1, ...appSettings, updated_at: new Date().toISOString() });
+    const [r1, r2] = await Promise.all([
+      supabase.from('settings').upsert({ id: 1, ...settings, updated_at: new Date().toISOString() }),
+      supabase.from('app_settings').upsert({ id: 1, ...appSettings, updated_at: new Date().toISOString() }),
+    ]);
     setSaving(false);
-    if (error || err2) {
-      toast({ variant: 'destructive', title: 'Error saving settings', description: (error || err2)?.message });
+    const err = r1.error || r2.error;
+    if (err) {
+      toast({ variant: 'destructive', title: 'Error saving settings', description: err.message });
     } else {
-      toast({ title: 'Settings saved', description: 'All platform settings have been updated.' });
+      toast({ title: 'Settings saved ✓', description: 'All platform settings updated.' });
     }
   };
 
-  const set = (key: keyof Settings, value: string) => setSettings(prev => ({ ...prev, [key]: value }));
-  const setApp = (key: keyof AppSettings, value: unknown) => setAppSettings(prev => ({ ...prev, [key]: value }));
+  const set = (key: keyof Settings, value: string) =>
+    setSettings(prev => ({ ...prev, [key]: value }));
+  const setApp = (key: keyof AppSettings, value: unknown) =>
+    setAppSettings(prev => ({ ...prev, [key]: value }));
 
-  if (loading) return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-32 bg-white/5 rounded-xl animate-pulse" />)}</div>;
+  if (loading) return (
+    <div className="space-y-4">
+      {[1, 2, 3].map(i => <div key={i} className="h-36 bg-white/5 rounded-xl animate-pulse" />)}
+    </div>
+  );
 
   return (
     <div className="space-y-6 max-w-3xl">
       <div>
         <h1 className="text-3xl font-bold text-white">Platform Settings</h1>
-        <p className="text-white/40 mt-1">Configure email, scraping, and global defaults</p>
+        <p className="text-white/40 mt-1">Configure email, AI assistant, and global defaults</p>
       </div>
 
-      {/* Email / OTP */}
+      {/* Email sending */}
       <Card className="bg-white/5 border-white/5">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2"><Mail className="w-5 h-5 text-blue-400" /> Email (OTP & Outreach)</CardTitle>
-          <CardDescription className="text-white/40">Brevo API key used for sending OTP verification emails and platform notifications</CardDescription>
+          <CardTitle className="text-white flex items-center gap-2">
+            <Mail className="w-5 h-5 text-blue-400" /> Email Sending
+          </CardTitle>
+          <CardDescription className="text-white/40">
+            Brevo API key for sending outreach emails. Users can also set their own in account settings.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label className="text-white/70">Brevo API Key</Label>
-            <Input value={settings.brevo_api_key || ''} onChange={e => set('brevo_api_key', e.target.value)}
-              placeholder="xkeysib-..." type="password"
-              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+            <Label className="text-white/70">Brevo API Key (platform-wide default)</Label>
+            <Input type="password" value={settings.brevo_api_key || ''} onChange={e => set('brevo_api_key', e.target.value)}
+              placeholder="xkeysib-..." className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
             <p className="text-xs text-white/30 flex items-start gap-1">
-              <Info className="w-3 h-3 mt-0.5 shrink-0" /> Get this from brevo.com → Settings → API Keys. This key is used for sending OTP emails on registration.
+              <Info className="w-3 h-3 mt-0.5 shrink-0" /> Get from brevo.com → Settings → API Keys
             </p>
           </div>
+          <div className="space-y-2">
+            <Label className="text-white/70">Platform Support Email</Label>
+            <Input type="email" value={(settings as Record<string,unknown>).support_email as string || ''}
+              onChange={e => set('support_email' as keyof Settings, e.target.value)}
+              placeholder="support@yourcompany.com" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* AI Email Writer */}
+      <Card className="bg-white/5 border-white/5">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
+            <Cpu className="w-5 h-5 text-purple-400" /> AI Email Writer
+          </CardTitle>
+          <CardDescription className="text-white/40">
+            Groq API key for generating cold-outreach emails. Free at console.groq.com.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-white/70">Groq API Key (platform-wide default)</Label>
+            <Input type="password" value={settings.groq_api_key || ''} onChange={e => set('groq_api_key', e.target.value)}
+              placeholder="gsk_..." className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+            <p className="text-xs text-white/30 flex items-start gap-1">
+              <Info className="w-3 h-3 mt-0.5 shrink-0" /> Users without their own key will use this. Free at console.groq.com
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Platform Identity */}
+      <Card className="bg-white/5 border-white/5">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
+            <Globe className="w-5 h-5 text-green-400" /> Platform Identity
+          </CardTitle>
+          <CardDescription className="text-white/40">Brand name and signature shown in emails.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label className="text-white/70">Platform Brand Name</Label>
             <Input value={settings.brand_name || ''} onChange={e => set('brand_name', e.target.value)}
-              placeholder="Darapet Lead Engine"
-              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+              placeholder="Darapet Lead Engine" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
           </div>
           <div className="space-y-2">
-            <Label className="text-white/70">Platform Website</Label>
+            <Label className="text-white/70">Signature Name (shows in outgoing emails)</Label>
+            <Input value={settings.signature_name || ''} onChange={e => set('signature_name', e.target.value)}
+              placeholder="The Darapet Team" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-white/70">Website URL</Label>
             <Input value={settings.website_url || ''} onChange={e => set('website_url', e.target.value)}
-              placeholder="https://darapet.com"
-              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+              placeholder="https://darapet.com" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
           </div>
         </CardContent>
       </Card>
 
-      {/* Scraping */}
+      {/* User Defaults */}
       <Card className="bg-white/5 border-white/5">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2"><Search className="w-5 h-5 text-green-400" /> Lead Scraping</CardTitle>
-          <CardDescription className="text-white/40">Google Custom Search API — used globally for all users' lead scraping. Users don't need their own keys.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-white/70">Google Search API Key</Label>
-            <Input value={settings.google_search_api_key || ''} onChange={e => set('google_search_api_key', e.target.value)}
-              type="password" placeholder="AIzaSy..."
-              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
-            <p className="text-xs text-white/30 flex items-start gap-1">
-              <Info className="w-3 h-3 mt-0.5 shrink-0" /> Get from console.cloud.google.com → APIs → Custom Search JSON API. Free: 100 queries/day.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-white/70">Search Engine ID (CX)</Label>
-            <Input value={settings.google_search_engine_id || ''} onChange={e => set('google_search_engine_id', e.target.value)}
-              placeholder="017576662512468239146:omuauf_lfve"
-              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
-            <p className="text-xs text-white/30">Get from programmablesearchengine.google.com → Your engine → Setup → Search engine ID</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* AI */}
-      <Card className="bg-white/5 border-white/5">
-        <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2"><Key className="w-5 h-5 text-purple-400" /> AI Writing (Groq)</CardTitle>
-          <CardDescription className="text-white/40">Platform-level Groq API key. Users can also set their own in profile settings.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-white/70">Groq API Key</Label>
-            <Input value={settings.groq_api_key || ''} onChange={e => set('groq_api_key', e.target.value)}
-              type="password" placeholder="gsk_..."
-              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
-            <p className="text-xs text-white/30">Get from console.groq.com. Free tier available.</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Default limits */}
-      <Card className="bg-white/5 border-white/5">
-        <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2"><Mail className="w-5 h-5 text-cyan-400" /> Default Account Limits</CardTitle>
-          <CardDescription className="text-white/40">Applied to all new users. Can be overridden per user in User Detail.</CardDescription>
+          <CardTitle className="text-white flex items-center gap-2">
+            <Users className="w-5 h-5 text-cyan-400" /> User Defaults
+          </CardTitle>
+          <CardDescription className="text-white/40">
+            Limits applied to new users on registration. Overridable per user.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label className="text-white/70">Default Daily Email Limit</Label>
-            <Input type="number" value={appSettings.default_daily_email_limit || ''} onChange={e => setApp('default_daily_email_limit', Number(e.target.value))}
-              placeholder="50"
-              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
-            <p className="text-xs text-white/30">Maximum emails a new user can send per day (0 = unlimited)</p>
+            <Input type="number" min={1} max={10000} value={appSettings.default_daily_email_limit ?? 50}
+              onChange={e => setApp('default_daily_email_limit', Number(e.target.value))}
+              className="bg-white/5 border-white/10 text-white w-40" />
+            <p className="text-xs text-white/30">Emails a new user can send per day.</p>
           </div>
         </CardContent>
       </Card>
 
-      <Button onClick={saveSettings} disabled={saving} className="bg-blue-600 hover:bg-blue-700 font-semibold px-8">
-        {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-        Save All Settings
-      </Button>
+      {/* Scraping info */}
+      <Card className="bg-white/5 border-green-500/20">
+        <CardContent className="p-5 flex items-start gap-3">
+          <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-white font-medium text-sm">Lead Scraping: No API key needed</p>
+            <p className="text-white/40 text-xs mt-1">
+              Scraping uses Bing search via a free CORS proxy — no Google API key required. Users can scrape immediately after signing up.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <Button onClick={saveSettings} disabled={saving} className="bg-blue-600 hover:bg-blue-700 gap-2 px-8">
+          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+          {saving ? 'Saving…' : 'Save All Settings'}
+        </Button>
+      </div>
     </div>
   );
 }

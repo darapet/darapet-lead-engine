@@ -10,6 +10,7 @@ type SettingsRow = {
   google_search_api_key: string | null;
   google_search_engine_id: string | null;
   groq_api_key: string | null;
+  support_email: string | null;
   signature_name: string | null;
   signature_title: string | null;
   signature_text: string | null;
